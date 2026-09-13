@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+build/
+dist/
+*.egg-info/
+*.so
+
+.idea/
+.vscode/
+
+output.mkv
+*.log

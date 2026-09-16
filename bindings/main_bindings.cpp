@@ -153,13 +153,14 @@ py::array_t<uint8_t> render_roi_zoom(
 }
 
 void init_frame_ring_buffer(py::module_& m);
-
+void init_frame_pipeline(py::module_& m);
 
 PYBIND11_MODULE(tracker_ops, m)
 {
     m.doc() = "High-performance C++ helper operations for CameraTracker";
 
     init_frame_ring_buffer(m);
+    init_frame_pipeline(m);
 
     // m.def("process_motion_and_blur", &process_motion_and_blur, "Detects motion and applies blur");
     // m.def("combine_and_annotate", &combine_and_annotate, "Hstacks two frames and draws telemetry");

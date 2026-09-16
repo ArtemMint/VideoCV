@@ -228,7 +228,62 @@ class CameraTracker:
         self.src.emit('push-buffer', out_buf)
 
         return Gst.FlowReturn.OK
+    
+class InteractiveTracker:
+    def __init__(self):
+        self.selected_track_id = -1
+        self.latest_tracks = [] # [(x1, y1, x2, y2, cls, conf, tid), ...]
+        
+        # Створюємо вікно та реєструємо mouse callback
+        cv2.namedWindow("Video Playback")
+        cv2.setMouseCallback("Video Playback", self.on_mouse_click)
 
+    def on_mouse_click(self, event, x, y, flags, param):
+        """Обробник кліку миші для вибору об'єкта"""
+        if event == cv2.EVENT_LBUTTONDOWN:
+            clicked_id = -1
+            for (x1, y1, x2, y2, cls, conf, tid) in self.latest_tracks:
+                if x1 <= x <= x2 and y1 <= y <= y2:
+                    clicked_id = tid
+                    break
+            
+            self.selected_track_id = clicked_id
+            if clicked_id != -1:
+                print(f"[Target Locked] Selected Track ID: #{clicked_id}")
+            else:
+                print("[Target Unlocked] Zoom reset")
+
+        elif event == cv2.EVENT_RBUTTONDOWN:
+            self.selected_track_id = -1
+            print("[Target Unlocked] Zoom reset")
+
+    def process_frame(self, frame: np.ndarray) -> np.ndarray:
+        # 1. Застосування ROI Zoom у C++
+        output_frame = tracker_ops.render_roi_zoom(
+            frame, 
+            self.latest_tracks, 
+            self.selected_track_id,
+            200
+        )
+
+        # 2. Draw the same boxes used by the mouse hit-test.
+        for x1, y1, x2, y2, cls, conf, tid in self.latest_tracks:
+            is_selected = tid == self.selected_track_id
+            color = (0, 255, 255) if is_selected else (0, 255, 0)
+            cv2.rectangle(output_frame, (x1, y1), (x2, y2), color, 2)
+            label = f"{cls} #{tid} {conf:.2f}"
+            cv2.putText(
+                output_frame,
+                label,
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
+
+        return output_frame
 
 if __name__ == '__main__':
     with CameraTracker(host='127.0.0.1', port=5000) as tracker:

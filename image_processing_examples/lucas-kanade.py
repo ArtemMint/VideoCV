@@ -12,7 +12,7 @@ import argparse
 cap = cv.VideoCapture(0)
 
 # params for ShiTomasi corner detection
-feature_params = dict( maxCorners = 20,
+feature_params = dict( maxCorners = 0,
                        qualityLevel = 0.2,
                        minDistance = 50,
                        blockSize = 7 )

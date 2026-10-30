@@ -21,7 +21,7 @@ Gst.init(None)
 Gst.debug_set_default_threshold(Gst.DebugLevel.INFO)
 
 IMGSZ = 640
-model = YOLO('models/vis_epoch50_openvino_model', task='detect')
+model = YOLO("models/yolo26n_visdrone_openvino_model")
 
 
 class PID:
@@ -105,10 +105,9 @@ class CameraTracker:
         """)
 
     def _send_pipeline(self, host: str, port: int) -> None:
-        # Увага: ширина у 2 рази більша (frame_size[0] * 2) через hstack
         self.send_pipeline: Gst.Element = Gst.parse_launch(f"""
             appsrc name=src format=time is-live=true max-bytes=0 block=false
-                caps=video/x-raw,format=BGR,width={self.frame_size[0] * 2},height={self.frame_size[1]},framerate={self.fps}/1
+                caps=video/x-raw,format=BGR,width={self.frame_size[0]},height={self.frame_size[1]},framerate={self.fps}/1
             ! videoconvert
             ! x264enc tune=zerolatency bitrate=5000 speed-preset=ultrafast
             ! rtph264pay config-interval=1 pt=96
@@ -135,16 +134,18 @@ class CameraTracker:
                 time.sleep(0.01)
                 continue
 
+            print("YOLO worker: before track", flush=True)
             results = model.track(
                 frame_to_process,
                 persist=True,
-                verbose=False,
+                verbose=True,
                 tracker="bytetrack.yaml",
                 conf=0.4,
                 iou=0.5,
                 imgsz=IMGSZ,
                 device='CPU'
             )[0]
+            print("YOLO worker: after track", flush=True)
 
             tracks: list[tuple[int, int, int, int, str, float, int]] = []
             if results.boxes is not None and results.boxes.id is not None:
@@ -159,7 +160,7 @@ class CameraTracker:
                 self.latest_tracks = tracks
 
             # Запобігає 100% завантаженню CPU
-            time.sleep(0.005)
+            time.sleep(0.0005)
 
     def on_new_sample(self, sink: Gst.Element) -> Gst.FlowReturn:
         sample: Gst.Sample = sink.emit('pull-sample')
@@ -172,60 +173,60 @@ class CameraTracker:
         structure = caps.get_structure(0)
         width = structure.get_value('width')
         height = structure.get_value('height')
+        expected_size = width * height * 3
 
         success, map_info = buf.map(Gst.MapFlags.READ)
         if not success:
             return Gst.FlowReturn.ERROR
 
         try:
+            if map_info.size < expected_size:
+                print(
+                    f"Invalid input buffer: got {map_info.size} bytes, "
+                    f"expected at least {expected_size} for {width}x{height} BGR"
+                )
+                return Gst.FlowReturn.ERROR
+
             # 1. Створюємо numpy array поверх пам'яті GStreamer
-            raw_frame = np.frombuffer(map_info.data, dtype=np.uint8).reshape(height, width, 3)
+            raw_frame = np.frombuffer(
+                map_info.data[:expected_size], dtype=np.uint8
+            )
 
             # 2. КРИТИЧНО: Робимо копію в оперативну пам'ять Python, 
             # щоб C++ модуль працював зі власною безпечною ділянкою пам'яті!
             frame = raw_frame.copy()
-
-            if (width, height) != self.frame_size:
-                frame = cv2.resize(frame, self.frame_size, interpolation=cv2.INTER_LINEAR)
-
         finally:
             # Unmap робимо тільки після того, як створили безпечну копію `frame`
             buf.unmap(map_info)
-
-        # 3. Безпечно передаємо `frame` (який вже є власником власної пам'яті) в C++
-        frame_processed = frame.copy()
         
         with self.frame_lock:
             prev_frame = self.latest_frame.copy() if self.latest_frame is not None else None
             self.latest_frame = frame.copy()
 
-        if prev_frame is not None:
-            mean_motion, frame_processed = tracker_ops.process_motion_and_blur(
-                frame, prev_frame, 20.0
-            )
+        # tracker_ops.process_pipeline(frame)
 
         with self.tracks_lock:
             current_tracks = list(self.latest_tracks)
 
-        if current_tracks:
-            tracker_ops.draw_tracks(frame_processed, current_tracks)
+        # if current_tracks:
+        #     tracker_ops.draw_tracks(frame_processed, current_tracks)
 
-        telemetry = self.get_telemetry_snapshot()
-        final_output = tracker_ops.combine_and_annotate(
-            frame, 
-            frame_processed,
-            telemetry.get('latitude', 0.0),
-            telemetry.get('longitude', 0.0),
-            telemetry.get('altitude', 0.0),
-            telemetry.get('battery', 0)
-        )
+        # telemetry = self.get_telemetry_snapshot()
+        # final_output = tracker_ops.combine_and_annotate(
+        #     frame,
+        #     frame_processed,
+        #     30
+        # )
 
         # 4. Відправка результату
-        out_buf = Gst.Buffer.new_wrapped(final_output.tobytes())
+        out_buf = Gst.Buffer.new_wrapped(self.latest_frame.tobytes())
         out_buf.pts = buf.pts
         out_buf.dts = buf.dts
         out_buf.duration = buf.duration
-        self.src.emit('push-buffer', out_buf)
+        flow_return = self.src.emit('push-buffer', out_buf)
+        if flow_return != Gst.FlowReturn.OK:
+            print(f"Output appsrc push failed: {flow_return.value_nick}")
+            return flow_return
 
         return Gst.FlowReturn.OK
     

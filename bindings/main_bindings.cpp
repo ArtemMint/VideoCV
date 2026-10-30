@@ -10,41 +10,6 @@
 
 namespace py = pybind11;
 
-std::tuple<double, py::array_t<uint8_t>>
-process_motion_and_blur(
-    py::array_t<uint8_t> curr_frame_arr,
-    py::array_t<uint8_t> prev_frame_arr,
-    double threshold_val)
-{
-    cv::Mat curr = NumpyMat::numpyToMat(curr_frame_arr);
-    cv::Mat prev = NumpyMat::numpyToMat(prev_frame_arr);
-
-    cv::Mat output_frame;
-    double mean_motion = 0.0;
-
-    {
-        py::gil_scoped_release release;
-
-        curr.copyTo(output_frame);
-
-        cv::Mat diff, gray, thresh;
-        cv::absdiff(curr, prev, diff);
-        cv::cvtColor(diff, gray, cv::COLOR_BGR2GRAY);
-        cv::threshold(gray, thresh, 25, 255, cv::THRESH_BINARY);
-
-        mean_motion = cv::mean(thresh)[0];
-
-        if (mean_motion > threshold_val)
-        {
-            cv::GaussianBlur(curr, output_frame, cv::Size(5, 5), 3);
-        }
-    }
-
-    py::array_t<uint8_t> result = NumpyMat::matToNumpy(output_frame);
-
-    return std::make_tuple(mean_motion, result);
-}
-
 py::array_t<uint8_t> combine_and_annotate(
     py::array_t<uint8_t> frame1_arr,
     py::array_t<uint8_t> frame2_arr,
@@ -162,7 +127,6 @@ PYBIND11_MODULE(tracker_ops, m)
     init_frame_ring_buffer(m);
     init_frame_pipeline(m);
 
-    // m.def("process_motion_and_blur", &process_motion_and_blur, "Detects motion and applies blur");
     // m.def("combine_and_annotate", &combine_and_annotate, "Hstacks two frames and draws telemetry");
     // m.def("render_roi_zoom", &render_roi_zoom, "Renders a zoomed-in PiP of the selected ROI");
 }

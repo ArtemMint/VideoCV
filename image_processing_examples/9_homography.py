@@ -8,13 +8,13 @@ cap = cv.VideoCapture(0)
 gray1 = cv.imread('files/img1.jpeg', cv.IMREAD_GRAYSCALE)
 gray2 = cv.imread('files/img2.jpeg', cv.IMREAD_GRAYSCALE)
 
-# Resize the images by half to speed up the processing
-gray1 = cv.resize(gray1, None, fx=0.5, fy=0.5)
-gray2 = cv.resize(gray2, None, fx=0.5, fy=0.5)
-
-if gray1 is None and gray2 is None:
+if gray1 is None or gray2 is None:
     print('Could not open or find the image!')
     exit(0)
+
+# Resize the images by half to speed up the processing
+gray1: np.ndarray = cv.resize(gray1, None, fx=0.5, fy=0.5)
+gray2: np.ndarray = cv.resize(gray2, None, fx=0.5, fy=0.5)
 
 #  Create an ORB detector with default values
 orb = cv.ORB.create(nfeatures=500)

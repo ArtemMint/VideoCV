@@ -1,0 +1,34 @@
+{
+  "runs": [
+    {
+      "name": "yolov8n-pt",
+      "model": "models/yolov8n.pt",
+      "device": "cpu"
+    },
+    {
+      "name": "yolov8n-onnx",
+      "model": "models/yolov8n.onnx",
+      "device": "cpu"
+    },
+    {
+      "name": "yolov8n-openvino",
+      "model": "models/yolov8n_openvino_model",
+      "device": "cpu"
+    },
+    {
+      "name": "yolo26n-pt",
+      "model": "models/yolo26n.pt",
+      "device": "cpu"
+    },
+    {
+      "name": "yolo26n-onnx",
+      "model": "models/yolo26n.onnx",
+      "device": "cpu"
+    },
+    {
+      "name": "yolo26n-openvino",
+      "model": "models/yolo26n_openvino_model",
+      "device": "cpu"
+    }
+  ]
+}

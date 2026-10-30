@@ -12,3 +12,42 @@ dist/
 
 output.mkv
 *.log
+
+# Do not commit photo or video media anywhere in the repository.
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.webp
+*.heic
+*.heif
+*.avif
+*.dng
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.mpeg
+*.mpg
+*.m4v
+*.wmv
+*.flv
+*.3gp
+*.mts
+*.m2ts
+*.vob
+*.ogv
+*.ts
+
+# Generated benchmark and Ultralytics validation artifacts.
+model_benchmark_results/
+runs/
+datasets/coco8/
+**/report.json
+**/report.html
+**/summary.json
+**/summary.html

@@ -88,11 +88,16 @@ class ModelRunnerTests(unittest.TestCase):
         with patch.dict("sys.modules", {"ultralytics": SimpleNamespace(YOLO=FakeYOLO)}):
             with patch("model_benchmark.runner._resolve_device", return_value="cpu"):
                 with patch("model_benchmark.runner._ResourceSampler", FakeSampler):
-                    result = run_one(config, self.root / "reports", 1)
+                    with patch(
+                        "model_benchmark.runner.ensure_visdrone_dataset",
+                        return_value={"downloaded": True, "images": 548},
+                    ) as ensure_dataset:
+                        result = run_one(config, self.root / "reports", 1)
 
         self.assertEqual(result["status"], "completed")
+        ensure_dataset.assert_called_once_with(config.dataset)
         self.assertEqual(calls["model"], (str(model_path), "detect"))
-        self.assertEqual(calls["val"]["data"], "coco8.yaml")
+        self.assertEqual(calls["val"]["data"], config.dataset)
         self.assertEqual(calls["val"]["device"], "cpu")
         self.assertTrue(calls["val"]["plots"])
         self.assertTrue(Path(result["report_json"]).is_file())
@@ -107,11 +112,13 @@ class ModelRunnerTests(unittest.TestCase):
         )
         self.assertEqual(report_data["resources"]["rss_peak_mb"], 120.0)
         self.assertEqual(report_data["tracking_metrics"]["status"], "not_evaluated")
+        self.assertIn("dataset_setup_seconds", report_data["timings"])
+        self.assertTrue(any("downloaded and prepared" in note for note in report_data["notes"]))
 
     def test_failed_model_run_is_reported_instead_of_appearing_successful(self):
         model_path = self.root / "model.pt"
         model_path.touch()
-        config = ModelRunConfig(model=model_path)
+        config = ModelRunConfig(model=model_path, dataset="coco8.yaml")
 
         class BrokenYOLO:
             def __init__(self, path, task):

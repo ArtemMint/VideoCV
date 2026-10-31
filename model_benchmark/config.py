@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Union
 
 
 ModelPath = Union[str, Path]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def detect_model_format(model_path: ModelPath) -> str:
@@ -45,7 +46,7 @@ class ModelRunConfig:
 
     model: ModelPath
     name: str = ""
-    dataset: str = "coco8.yaml"
+    dataset: str = "datasets/visdrone-val.yaml"
     tracker: str = "bytetrack.yaml"
     imgsz: int = 640
     device: str = "auto"
@@ -60,8 +61,16 @@ class ModelRunConfig:
 
         if not isinstance(self.name, str):
             raise ValueError("name must be a string")
-        if not self.dataset.strip():
+        if not isinstance(self.dataset, str) or not self.dataset.strip():
             raise ValueError("Dataset must be a non-empty name or path")
+        dataset_path = Path(self.dataset).expanduser()
+        if dataset_path.is_absolute() or "/" in self.dataset or "\\" in self.dataset:
+            if not dataset_path.is_absolute():
+                dataset_path = PROJECT_ROOT / dataset_path
+            dataset_path = dataset_path.resolve()
+            if not dataset_path.exists():
+                raise ValueError("Dataset path does not exist: {}".format(dataset_path))
+            object.__setattr__(self, "dataset", str(dataset_path))
         if not self.tracker.strip():
             raise ValueError("Tracker must be a non-empty Ultralytics tracker config")
         if not self.device.strip():

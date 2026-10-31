@@ -18,15 +18,29 @@ class ModelRunConfigTests(unittest.TestCase):
         model.touch()
         return model
 
-    def test_defaults_use_coco8_and_bytetrack(self):
+    def test_defaults_use_local_visdrone_and_bytetrack(self):
         config = ModelRunConfig(model=self.make_model("model.pt"))
 
-        self.assertEqual(config.dataset, "coco8.yaml")
+        self.assertEqual(
+            config.dataset,
+            str(Path(__file__).resolve().parents[2] / "datasets" / "visdrone-val.yaml"),
+        )
         self.assertEqual(config.tracker, "bytetrack.yaml")
         self.assertEqual(config.imgsz, 640)
         self.assertEqual(config.device, "auto")
         self.assertEqual(config.batch, 1)
         self.assertEqual(config.conf, 0.001)
+
+    def test_custom_dataset_path_is_resolved_and_must_exist(self):
+        model = self.make_model("model.pt")
+        dataset = self.root / "custom.yaml"
+        dataset.write_text("path: .\ntrain: train\nval: val\nnames: [object]\n", encoding="utf-8")
+
+        config = ModelRunConfig(model=model, dataset=str(dataset))
+
+        self.assertEqual(config.dataset, str(dataset.resolve()))
+        with self.assertRaisesRegex(ValueError, "Dataset path does not exist"):
+            ModelRunConfig(model=model, dataset=str(self.root / "missing.yaml"))
 
     def test_detects_pt_and_onnx_formats(self):
         self.assertEqual(detect_model_format(self.make_model("model.pt")), "pt")
@@ -121,7 +135,9 @@ class ModelRunConfigTests(unittest.TestCase):
 
         self.assertEqual(len(configs), 2)
         self.assertEqual(configs[0].name, "first")
-        self.assertEqual(configs[0].dataset, "coco8.yaml")
+        self.assertEqual(configs[0].dataset, str(
+            Path(__file__).resolve().parents[2] / "datasets" / "visdrone-val.yaml"
+        ))
         self.assertEqual(configs[0].tracker, "bytetrack.yaml")
         self.assertEqual(configs[1].imgsz, 320)
         self.assertEqual(configs[1].model_format, "onnx")
@@ -132,10 +148,10 @@ class ModelRunConfigTests(unittest.TestCase):
             project_root / "model_benchmark" / "config.multi.example.json"
         )
 
-        self.assertEqual(len(configs), 9)
+        self.assertEqual(len(configs), 6)
         self.assertEqual(
             [config.model_format for config in configs],
-            ["pt", "onnx", "openvino"] * 3,
+            ["pt", "onnx", "openvino"] * 2,
         )
         self.assertTrue(all(config.device == "cpu" for config in configs))
         self.assertTrue(

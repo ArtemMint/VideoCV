@@ -28,25 +28,54 @@ Supported model formats are detected from the model path:
 - ONNX: `.onnx` file
 - OpenVINO: `.xml` file or a directory containing exactly one `.xml` file
 
-The default dataset is Ultralytics' `coco8.yaml`. Tracking configuration is
-recorded as `bytetrack.yaml` by default, but tracking metrics are not evaluated:
-COCO8 has no ground-truth track IDs. The other defaults are 640-pixel input
-size, batch size 1, automatic device selection, confidence threshold 0.001, and
-IoU threshold 0.7. Automatic device selection uses CUDA for `.pt` models when
-available, CPU otherwise; ONNX and OpenVINO currently use CPU when set to
-`auto`. An explicit `device` value is passed to Ultralytics.
+The default dataset is the VisDrone2019-DET validation split, described by
+[datasets/visdrone-val.yaml](datasets/visdrone-val.yaml). Tracking configuration
+is recorded as `bytetrack.yaml` by default, but tracking metrics are not
+evaluated: the detection dataset has no ground-truth track IDs. The other
+defaults are 640-pixel input size, batch size 1, automatic device selection,
+confidence threshold 0.001, and IoU threshold 0.7. Automatic device selection
+uses CUDA for `.pt` models when available, CPU otherwise; ONNX and OpenVINO
+currently use CPU when set to `auto`. An explicit `device` value is passed to
+Ultralytics.
 
-COCO8 is intentionally kept as the default smoke-test dataset, but it contains
-only a handful of validation images. Its metrics verify that evaluation works;
-they are too noisy to establish a reliable production ranking. For a fair
-hardware comparison, set the same explicit `device` for each backend (for
-example, `cpu`) instead of mixing automatic CUDA for PyTorch and CPU for
-ONNX/OpenVINO.
+The VisDrone validation split is the default for models trained with the
+VisDrone 10-class label map. The included VisDrone-trained YOLO26n OpenVINO
+model can be evaluated directly. Do not validate COCO-pretrained models against
+VisDrone and compare those metrics: their class label maps do not match.
+The multi-model example therefore explicitly keeps COCO8 for the COCO-pretrained
+YOLO models. For a fair hardware comparison, set the same explicit `device` for
+each backend (for example, `cpu`) instead of mixing automatic CUDA for PyTorch
+and CPU for ONNX/OpenVINO.
+
+### Dataset setup
+
+The default validation config downloads and prepares the VisDrone validation
+split automatically before inference if the local files are missing. You can
+also prepare it explicitly:
+
+```bash
+python -m model_benchmark.cli prepare-visdrone
+```
+
+This downloads only the VisDrone2019-DET validation archive (about 82 MB),
+converts annotations to YOLO format, and writes the result to
+`datasets/VisDrone/`. The large dataset files are ignored by Git; the small
+dataset YAML is tracked. The full VisDrone train/test archives are not
+downloaded. If the dataset directory exists but is incomplete, setup stops with
+an error instead of overwriting local files; remove or repair that directory
+before retrying.
+
+To use your own prepared detection dataset, put its images/labels under
+`datasets/` and create a YOLO dataset YAML. Set `dataset` in the run
+configuration to that YAML path, for example `"dataset":
+"datasets/my-dataset.yaml"`. The YAML must define `train`, `val`, and `names`
+in Ultralytics format. The path is validated before inference. Dataset paths
+with relative components are resolved from the repository root.
 
 ### Run one or more models
 
 The comparison config includes local COCO-pretrained Nano weights and their
-ONNX and OpenVINO exports: YOLOv8n, YOLO11n, and YOLO26n, for nine runs total.
+ONNX and OpenVINO exports: YOLOv8n and YOLO26n, for six runs total.
 All runs explicitly use CPU so backend comparisons do not silently compare GPU
 PyTorch with CPU ONNX/OpenVINO. Override `device` consistently if you want to
 compare another supported device. YOLO27 has no downloadable weights yet, so
@@ -54,15 +83,24 @@ YOLO26n is the third model family. The original weights are official Ultralytics
 release assets; Ultralytics models are distributed under AGPL-3.0 or a
 commercial license.
 
-Run the included comparison config:
+The comparison config uses COCO8 explicitly because these weights use COCO
+class IDs. To validate a VisDrone-trained model with the default dataset, run
+the single-model config:
+
+```bash
+python -m model_benchmark.cli run model_benchmark/config.example.json \
+  --output model_benchmark_results
+```
+
+Run the COCO model/format comparison config:
 
 ```bash
 python -m model_benchmark.cli run model_benchmark/config.multi.example.json \
   --output model_benchmark_results
 ```
 
-The first run may download Ultralytics' COCO8 dataset. The project dependencies
-are listed in [requirements.txt](requirements.txt).
+The first COCO comparison run may download Ultralytics' COCO8 dataset. The
+project dependencies are listed in [requirements.txt](requirements.txt).
 Install the optional inference backends needed by your model formats with:
 
 ```bash
@@ -126,9 +164,11 @@ models, use a top-level `runs` list. Each entry can override defaults:
 ```
 
 The following options can be set per run: `name`, `model`, `dataset`, `tracker`,
-`imgsz`, `device`, `batch`, `conf`, and `iou`. Dataset defaults to `coco8.yaml`;
-change it only when deliberately comparing on another dataset. The model path
-is resolved from the current working directory.
+`imgsz`, `device`, `batch`, `conf`, and `iou`. Dataset defaults to
+`datasets/visdrone-val.yaml`; COCO-pretrained models should explicitly use
+`coco8.yaml` or another COCO-labeled dataset. Dataset paths are resolved from
+the repository root. Only the project's known VisDrone validation YAML is
+automatically prepared; custom dataset paths are never downloaded implicitly.
 
 ### Reports and measurements
 
@@ -151,18 +191,18 @@ message; metrics are not filled with success-like defaults.
 | Planned area | Status |
 | --- | --- |
 | Reproducible per-model parameters and multi-run config | Implemented |
-| YOLOv8/11/26 `.pt`, ONNX, and OpenVINO CPU evaluation | Implemented and smoke-tested |
+| YOLOv8/26 `.pt`, ONNX, and OpenVINO CPU evaluation | Implemented and smoke-tested |
 | Detection Precision, Recall, mAP, per-class results, and validation plots | Implemented |
 | Latency/FPS, process CPU, and process RSS reporting | Implemented; see measurement limits below |
 | Individual and comparison JSON/HTML reports | Implemented |
-| Unit tests and end-to-end COCO8 run | Implemented; 13 unit tests pass and all nine configured runs completed |
+| Unit tests and end-to-end validation | Implemented; 17 unit tests pass, six COCO-format benchmark runs completed, and VisDrone validation completed on 548 images |
 | Ground-truth tracker stability metrics | Not implemented: COCO8 has no track IDs |
 | Automatic error categorization and AI-assisted development workflow | Not implemented |
 | Windows/macOS/Linux comparison in CI | Not implemented |
 
 COCO8 currently supplies only four validation images in this workspace. It is
 useful as a pipeline smoke test, not for statistically reliable model ranking.
-The first nine-run CPU check also showed visible mAP differences between the
+The initial CPU comparison also showed visible mAP differences between the
 PyTorch and exported variants for some model families. Treat these numbers as
 a parity warning, not a conclusion that one format is more accurate. Before
 using exports in production, compare per-image detections and validation

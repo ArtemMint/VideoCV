@@ -1,11 +1,13 @@
 import argparse
 import sys
+import zipfile
 from pathlib import Path
 from typing import List, Optional, Sequence
 
 from .config import ModelRunConfig
 from .report import write_summary_report
 from .runner import run_one
+from .visdrone import prepare_visdrone_val
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,11 +21,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", type=Path, default=Path("model_benchmark_results"),
         help="directory for per-model and summary reports",
     )
+    subparsers.add_parser(
+        "prepare-visdrone",
+        help="download and prepare the VisDrone validation split under datasets/",
+    )
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "prepare-visdrone":
+        try:
+            result = prepare_visdrone_val()
+        except (OSError, ValueError, zipfile.BadZipFile) as exc:
+            print("Could not prepare VisDrone validation data: {}".format(exc), file=sys.stderr)
+            return 1
+        action = "Prepared" if result["downloaded"] else "Already prepared"
+        print(
+            "{} {} images and labels at {}".format(
+                action, result["images"], result["dataset_root"]
+            )
+        )
+        return 0
+
     try:
         configs: List[ModelRunConfig] = ModelRunConfig.many_from_json(args.config)
     except (OSError, ValueError, TypeError, KeyError) as exc:

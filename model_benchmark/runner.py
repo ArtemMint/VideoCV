@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import ModelRunConfig
+from .visdrone import ensure_visdrone_dataset
 
 
 def _safe_name(value: str) -> str:
@@ -178,17 +179,30 @@ def run_one(
         "resources": {},
         "timings": {},
         "artifacts": {},
-        "notes": [
-            "COCO8 is a tiny smoke-test dataset; metrics are not statistically "
-            "reliable for production model selection."
-        ],
+        "notes": [],
         "tracking_metrics": {
             "status": "not_evaluated",
-            "reason": "COCO8 has no ground-truth track IDs",
+            "reason": "The selected detection dataset has no ground-truth track IDs",
         },
     }
+    if "coco8" in config.dataset.lower():
+        result["notes"].append(
+            "COCO8 is a tiny smoke-test dataset; metrics are not statistically "
+            "reliable for production model selection."
+        )
 
     try:
+        dataset_setup_started = time.perf_counter()
+        dataset_setup = ensure_visdrone_dataset(config.dataset)
+        result["timings"]["dataset_setup_seconds"] = (
+            time.perf_counter() - dataset_setup_started
+        )
+        if dataset_setup.get("downloaded"):
+            result["notes"].append(
+                "VisDrone validation data was missing and was downloaded and prepared "
+                "automatically before evaluation."
+            )
+
         from ultralytics import YOLO
 
         device = _resolve_device(config)

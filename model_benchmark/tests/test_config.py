@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, Dict
 
 from model_benchmark import ModelRunConfig
 from model_benchmark.config import detect_model_format
@@ -71,22 +72,28 @@ class ModelRunConfigTests(unittest.TestCase):
 
     def test_rejects_invalid_evaluation_parameters(self):
         model = self.make_model("model.pt")
+
+        def make_config(**overrides: Any) -> ModelRunConfig:
+            values: Dict[str, Any] = {"model": model}
+            values.update(overrides)
+            return ModelRunConfig(**values)
+
         invalid_configs = (
-            lambda: ModelRunConfig(model=model, imgsz=0),
-            lambda: ModelRunConfig(model=model, batch=0),
-            lambda: ModelRunConfig(model=model, repeats=0),
-            lambda: ModelRunConfig(model=model, repeats=1.5),
-            lambda: ModelRunConfig(model=model, warmup_iterations=-1),
-            lambda: ModelRunConfig(model=model, inference_iterations=0),
-            lambda: ModelRunConfig(model=model, conf=-0.1),
-            lambda: ModelRunConfig(model=model, iou=1.1),
-            lambda: ModelRunConfig(model=model, min_map50_95=1.1),
-            lambda: ModelRunConfig(model=model, max_latency_ms=0),
-            lambda: ModelRunConfig(model=model, max_memory_mb="100"),
-            lambda: ModelRunConfig(model=model, max_gpu_memory_mb=-1),
-            lambda: ModelRunConfig(model=model, dataset=""),
-            lambda: ModelRunConfig(model=model, tracker=""),
-            lambda: ModelRunConfig(model=model, device=""),
+            lambda: make_config(imgsz=0),
+            lambda: make_config(batch=0),
+            lambda: make_config(repeats=0),
+            lambda: make_config(repeats=1.5),
+            lambda: make_config(warmup_iterations=-1),
+            lambda: make_config(inference_iterations=0),
+            lambda: make_config(conf=-0.1),
+            lambda: make_config(iou=1.1),
+            lambda: make_config(min_map50_95=1.1),
+            lambda: make_config(max_latency_ms=0),
+            lambda: make_config(max_memory_mb="100"),
+            lambda: make_config(max_gpu_memory_mb=-1),
+            lambda: make_config(dataset=""),
+            lambda: make_config(tracker=""),
+            lambda: make_config(device=""),
         )
         for invalid_config in invalid_configs:
             with self.subTest(invalid_config=invalid_config):
@@ -174,21 +181,33 @@ class ModelRunConfigTests(unittest.TestCase):
         self.assertEqual(configs[1].imgsz, 320)
         self.assertEqual(configs[1].model_format, "onnx")
 
-    def test_default_model_comparison_points_to_local_weights(self):
+    def test_multi_model_example_declares_visdrone_model_formats(self):
         project_root = Path(__file__).resolve().parents[2]
-        configs = ModelRunConfig.many_from_json(
-            project_root / "model_benchmark" / "config.multi.example.json"
-        )
+        config_path = project_root / "model_benchmark" / "config.multi.example.json"
+        with config_path.open("r", encoding="utf-8") as config_file:
+            runs = json.load(config_file)["runs"]
 
-        self.assertEqual(len(configs), 6)
+        # Model binaries are intentionally Git-ignored; this test validates the
+        # checked-in example configuration without requiring downloaded weights.
         self.assertEqual(
-            [config.model_format for config in configs],
-            ["pt", "onnx", "openvino"] * 2,
+            [run["model"] for run in runs],
+            [
+                "models/yolo26n_visdrone_openvino_model",
+                "models/yolo26n_visdrone.pt",
+            ],
         )
-        self.assertTrue(all(config.device == "cpu" for config in configs))
+        self.assertEqual(
+            [
+                "openvino" if "_openvino_model" in run["model"] else "pt"
+                for run in runs
+            ],
+            ["openvino", "pt"],
+        )
         self.assertTrue(
-            all(config.model.is_file() or config.model.is_dir() for config in configs)
+            all(run["dataset"] == "datasets/visdrone-val.yaml" for run in runs)
         )
+        self.assertTrue(all(run["tracker"] == "bytetrack.yaml" for run in runs))
+        self.assertTrue(all(run["device"] == "auto" for run in runs))
 
 
 if __name__ == "__main__":

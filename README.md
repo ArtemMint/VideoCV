@@ -1,5 +1,21 @@
 # VideoCV
 
+## Project layout
+
+- `cpp/` contains the C++ implementation, public headers, and pybind11 bindings:
+  `cpp/src/`, `cpp/include/`, and `cpp/bindings/`.
+- Python applications and packages remain in their current top-level locations
+  (`Tracker/`, `MavLinkCTRL/`, `VideoRecorder/`, `model_benchmark/`, and the
+  root-level entry-point scripts).
+- `models/` contains example YOLO weights and exported model formats.
+
+The C++ extension is built from the repository root with:
+
+```bash
+cmake -S . -B build
+cmake --build build
+```
+
 ## YOLO model benchmark
 
 The `model_benchmark` package evaluates YOLO detection models on a common

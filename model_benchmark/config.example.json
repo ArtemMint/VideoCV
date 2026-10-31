@@ -1,6 +1,6 @@
 {
   "model": "models/yolo26n_visdrone_openvino_model",
-  "dataset": "coco8.yaml",
+  "dataset": "datasets/visdrone-val.yaml",
   "tracker": "bytetrack.yaml",
   "imgsz": 640,
   "device": "auto",

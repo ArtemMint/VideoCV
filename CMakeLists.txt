@@ -29,11 +29,11 @@ endif()
 find_package(pybind11 CONFIG REQUIRED)
 
 file(GLOB_RECURSE SOURCES 
-    "src/*.cpp"
-    "bindings/*.cpp"
+    "cpp/src/*.cpp"
+    "cpp/bindings/*.cpp"
 )
 
 pybind11_add_module(tracker_ops ${SOURCES})
-target_include_directories(tracker_ops PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(tracker_ops PRIVATE ${CMAKE_SOURCE_DIR}/cpp/include)
 target_link_libraries(tracker_ops PRIVATE ${OpenCV_LIBS})
 install(TARGETS tracker_ops LIBRARY DESTINATION .)

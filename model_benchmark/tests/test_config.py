@@ -74,8 +74,16 @@ class ModelRunConfigTests(unittest.TestCase):
         invalid_configs = (
             lambda: ModelRunConfig(model=model, imgsz=0),
             lambda: ModelRunConfig(model=model, batch=0),
+            lambda: ModelRunConfig(model=model, repeats=0),
+            lambda: ModelRunConfig(model=model, repeats=1.5),
+            lambda: ModelRunConfig(model=model, warmup_iterations=-1),
+            lambda: ModelRunConfig(model=model, inference_iterations=0),
             lambda: ModelRunConfig(model=model, conf=-0.1),
             lambda: ModelRunConfig(model=model, iou=1.1),
+            lambda: ModelRunConfig(model=model, min_map50_95=1.1),
+            lambda: ModelRunConfig(model=model, max_latency_ms=0),
+            lambda: ModelRunConfig(model=model, max_memory_mb="100"),
+            lambda: ModelRunConfig(model=model, max_gpu_memory_mb=-1),
             lambda: ModelRunConfig(model=model, dataset=""),
             lambda: ModelRunConfig(model=model, tracker=""),
             lambda: ModelRunConfig(model=model, device=""),
@@ -84,6 +92,30 @@ class ModelRunConfigTests(unittest.TestCase):
             with self.subTest(invalid_config=invalid_config):
                 with self.assertRaises(ValueError):
                     invalid_config()
+
+    def test_serializes_measurement_and_acceptance_parameters(self):
+        config = ModelRunConfig(
+            model=self.make_model("model.pt"),
+            repeats=4,
+            warmup_iterations=7,
+            inference_iterations=25,
+            half=True,
+            export_parameters={"dynamic": True, "opset": 17},
+            min_map50_95=0.4,
+            max_latency_ms=40,
+            max_memory_mb=1200,
+            max_gpu_memory_mb=900,
+        )
+
+        serialized = config.as_dict()
+
+        self.assertEqual(serialized["repeats"], 4)
+        self.assertEqual(serialized["warmup_iterations"], 7)
+        self.assertEqual(serialized["inference_iterations"], 25)
+        self.assertTrue(serialized["half"])
+        self.assertEqual(serialized["export_parameters"]["opset"], 17)
+        self.assertEqual(serialized["max_latency_ms"], 40)
+        self.assertEqual(serialized["max_gpu_memory_mb"], 900)
 
     def test_loads_json_and_exports_format_and_host_environment(self):
         model = self.make_model("model.onnx")

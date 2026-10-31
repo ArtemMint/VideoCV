@@ -164,27 +164,63 @@ models, use a top-level `runs` list. Each entry can override defaults:
 ```
 
 The following options can be set per run: `name`, `model`, `dataset`, `tracker`,
-`imgsz`, `device`, `batch`, `conf`, and `iou`. Dataset defaults to
+`imgsz`, `device`, `batch`, `conf`, `iou`, `repeats`, `warmup_iterations`,
+`inference_iterations`, `half`, `export_parameters`, `min_map50_95`,
+`max_latency_ms`, `max_memory_mb`, and `max_gpu_memory_mb`. Dataset defaults to
 `datasets/visdrone-val.yaml`; COCO-pretrained models should explicitly use
 `coco8.yaml` or another COCO-labeled dataset. Dataset paths are resolved from
 the repository root. Only the project's known VisDrone validation YAML is
 automatically prepared; custom dataset paths are never downloaded implicitly.
+`export_parameters` records exporter settings for traceability; it does not
+re-export or modify a model. `half` is passed as the requested FP16 mode.
+Defaults are three validation repeats, five warm-up calls, and 20 timed
+prediction calls per repeat.
+
+CLI overrides can set common repeat counts and acceptance limits across all
+runs in a config:
+
+```bash
+python -m model_benchmark.cli run model_benchmark/config.multi.example.json \
+  --repeats 5 --warmup-iterations 10 --inference-iterations 30 \
+  --min-map50-95 0.25 --max-latency-ms 40 --max-memory-mb 1500 \
+  --max-gpu-memory-mb 1000
+```
 
 ### Reports and measurements
 
 Each run gets its own directory with `report.json` and `report.html`. Reports
-include model format, run parameters, inferred device, OS, architecture, and
-CPU metadata, Precision, Recall, mAP50, mAP50-95, per-class mAP when available,
-validation average latency/FPS, p50/p95 validation batch latency, model load
-and validation wall time, process CPU utilization, and baseline/peak process
-RSS memory. CPU percentage is expressed relative to one
-logical CPU, so it can exceed 100% for multi-threaded work. Ultralytics
-validation plots are retained in the run's `ultralytics/` artifact directory
-for visual error analysis.
+include model format and parameters, host/device model, OS and runtime versions,
+requested precision, exporter metadata, Precision, Recall, mAP50, mAP50-95,
+per-class mAP, load time, warm-up time, and repeated validation wall times.
+After a separate warm-up, the runner repeatedly predicts one real image from
+the configured validation split and reports preprocess/inference/postprocess
+stage timings, end-to-end per-frame p50/p95/mean/stddev/range, and FPS
+distribution. Detection metrics are collected in repeated validation passes.
+
+Resource reports include benchmark-process-tree CPU and RAM, whole-system CPU
+utilization, optional system temperature sensors, and optional GPU utilization,
+memory, temperature, power, and estimated energy. GPU board telemetry is
+collected through NVML when available; install it with
+`python -m pip install nvidia-ml-py`. CUDA process allocation peaks are reported
+when PyTorch CUDA telemetry is available. If a sensor cannot be read, the
+report records that it is unavailable rather than treating it as zero. CPU
+utilization is relative to one logical CPU and can exceed 100% for
+multi-threaded work.
 
 The output directory also contains `summary.json` and `summary.html` for
-comparing all runs. Failed models get an explicit failed report and error
-message; metrics are not filled with success-like defaults.
+comparing all runs. Pareto-optimal runs are identified using mAP50-95, p95
+end-to-end latency, host RAM, and GPU memory (process allocation when available,
+otherwise device-wide NVML usage). Dominance is checked
+only among runs with the same comparison group: same host and device model,
+dataset, image size, batch, thresholds, precision, and configured exporter
+parameters. Different devices or CPU/GPU backends are deliberately not ranked
+together. `min_map50_95`, `max_latency_ms`, `max_memory_mb`, and
+`max_gpu_memory_mb` produce explicit per-run acceptance checks
+(`max_latency_ms` is checked against p95) and a
+`meets_requirements` result. Failed runs receive
+an explicit failed report and error message; metrics are not filled with
+success-like defaults. When acceptance limits are configured, the CLI exits
+successfully only if at least one completed model meets all its limits.
 
 ### Current implementation status and next work
 
@@ -193,9 +229,11 @@ message; metrics are not filled with success-like defaults.
 | Reproducible per-model parameters and multi-run config | Implemented |
 | YOLOv8/26 `.pt`, ONNX, and OpenVINO CPU evaluation | Implemented and smoke-tested |
 | Detection Precision, Recall, mAP, per-class results, and validation plots | Implemented |
-| Latency/FPS, process CPU, and process RSS reporting | Implemented; see measurement limits below |
+| Separate load/warm-up/inference-stage/frame timings and repeated summaries | Implemented; see measurement limits below |
+| Process-tree/system CPU, RAM, optional GPU and temperature/energy telemetry | Implemented with documented sensor availability |
+| Acceptance thresholds and quality/latency/memory Pareto comparison | Implemented within equivalent hardware and run conditions |
 | Individual and comparison JSON/HTML reports | Implemented |
-| Unit tests and end-to-end validation | Implemented; 17 unit tests pass, six COCO-format benchmark runs completed, and VisDrone validation completed on 548 images |
+| Unit tests and end-to-end validation | Unit tests cover the benchmark flow; hardware-specific measurements need validation on the target device |
 | Ground-truth tracker stability metrics | Not implemented: COCO8 has no track IDs |
 | Automatic error categorization and AI-assisted development workflow | Not implemented |
 | Windows/macOS/Linux comparison in CI | Not implemented |
@@ -209,19 +247,27 @@ using exports in production, compare per-image detections and validation
 metrics on a representative, larger dataset with matching preprocessing,
 confidence, IoU, and precision settings.
 
-CPU and memory values are for the benchmark Python process, not the whole
-process tree or system. GPU memory is not measured. Validation batch p50/p95
-includes the validation loop rather than an isolated, warmed-up model call;
-use the exported format's validation speed fields for a rough inference
-comparison only. Repeated runs, warm-up separation, child-process accounting,
-and optional GPU metrics are good next improvements.
+The timed per-frame probe repeats the same first validation image to keep image
+content fixed; report latency separately from validation metrics. It measures
+the `predict` API path (preprocess, model, and postprocess), not camera capture,
+video decoding, rendering, or full application throughput. Use a representative
+dataset and target hardware before making deployment decisions. Model loading is
+measured once per model object; validation and inference probes are repeated.
+
+NVML utilization, temperature, and power describe the selected NVIDIA device,
+not only this process; energy is an estimate integrated from sampled board
+power. CPU energy is not measured because there is no portable sensor interface.
+Process-tree figures cover child processes observed during sampling. The
+benchmark records runtime versions so results can be interpreted if runtime
+versions change; keep software, ambient conditions, and power modes fixed for
+high-confidence device comparisons.
 
 Recommended next steps:
 
 1. Add a representative, labeled validation dataset and an export parity test
    comparing `.pt` with ONNX/OpenVINO per image.
-2. Measure warm-up separately, repeat each benchmark, and summarize latency
-   percentiles and variance; add process-tree and optional GPU memory metrics.
+2. Validate the measurements against an external camera/stream timing harness
+   and collect onboard power telemetry on the target platform if available.
 3. Add a MOT-format dataset and tracker metrics such as IDF1/HOTA before
    reporting tracker stability.
 4. Add CI smoke tests for supported OS/runtime combinations and document the

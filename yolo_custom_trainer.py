@@ -56,7 +56,7 @@ model = YOLO("vis_epoch50_openvino_model")
 
 # model.train(data="coco8.yaml", epochs=10, trainer=WeightedTrainer)
 results = model.track(
-    source="video_example/12805671_3840_2160_60fps.mp4",
+    source="media/12805671_3840_2160_60fps.mp4",
     task="detect",
     imgsz=640,
     save=True,

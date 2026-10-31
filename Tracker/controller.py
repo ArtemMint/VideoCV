@@ -70,7 +70,7 @@ DEFAULT_FPS: int = 30
 DEFAULT_IMGSZ: int = 640
 DEFAULT_MODEL_PATH: str = "models/yolo26n_visdrone_openvino_model"
 DEFAULT_VIDEO_PATH: str = "image_processing_examples/files/drone-video.mp4"
-FALLBACK_VIDEO_PATH: str = "video_example/drone.mp4"
+FALLBACK_VIDEO_PATH: str = "media/drone.mp4"
 
 
 class PID:

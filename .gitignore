@@ -43,6 +43,17 @@ output.mkv
 *.ogv
 *.ts
 
+# Consolidated media directory and video output artifacts.
+media/
+video_artifacts/
+
+# Model weight files (large binaries, download separately).
+models/
+*.pt
+*.onnx
+*.bin
+*.xml
+
 # Generated benchmark and Ultralytics validation artifacts.
 model_benchmark_results/
 runs/

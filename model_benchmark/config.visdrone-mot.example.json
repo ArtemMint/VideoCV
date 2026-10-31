@@ -1,0 +1,11 @@
+{
+  "model": "models/yolo26n_visdrone_openvino_model",
+  "dataset": "datasets/visdrone-val.yaml",
+  "tracking_dataset": "datasets/VisDrone-MOT",
+  "tracker": "bytetrack.yaml",
+  "imgsz": 640,
+  "device": "auto",
+  "batch": 1,
+  "conf": 0.001,
+  "iou": 0.7
+}

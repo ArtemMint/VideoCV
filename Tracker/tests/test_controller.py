@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 
 from Tracker.controller import (
+    Gst,
     PID,
     CameraTracker,
     InteractiveTracker,
@@ -343,7 +344,37 @@ class CameraTrackerTests(unittest.TestCase):
         self.assertEqual(tracker.latest_frame.shape, (120, 160, 3))
         self.assertTrue(len(processed_flags) > 0)
 
+    def test_on_new_sample_streams_frames_with_detections(self) -> None:
+        tracker = CameraTracker(
+            host="127.0.0.1",
+            port=5000,
+            device="videotestsrc num-buffers=1 ! appsink name=sink",
+            frame_size=(100, 100),
+            model=MagicMock(),
+        )
+        frame = np.zeros((100, 100, 3), dtype=np.uint8)
+        input_buffer = Gst.Buffer.new_wrapped(frame.tobytes())
+        sample = MagicMock()
+        sample.get_buffer.return_value = input_buffer
+        sample.get_caps.return_value = Gst.Caps.from_string(
+            "video/x-raw,format=BGR,width=100,height=100"
+        )
+        sink = MagicMock()
+        sink.emit.return_value = sample
+        tracker.src = MagicMock()
+        tracker.src.emit.return_value = Gst.FlowReturn.OK
+        tracker.latest_tracks = [(10, 10, 80, 80, "truck", 0.9, 1)]
+
+        flow_return = tracker.on_new_sample(sink)
+
+        self.assertEqual(flow_return, Gst.FlowReturn.OK)
+        pushed_buffer = tracker.src.emit.call_args.args[1]
+        pushed_frame = np.frombuffer(
+            pushed_buffer.extract_dup(0, pushed_buffer.get_size()), dtype=np.uint8
+        ).reshape((100, 100, 3))
+        np.testing.assert_array_equal(pushed_frame[10, 10], (0, 255, 0))
+        tracker.stop()
+
 
 if __name__ == "__main__":
     unittest.main()
-

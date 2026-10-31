@@ -448,6 +448,34 @@ class CameraTracker:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.stop()
 
+    @staticmethod
+    def _annotate_tracks(
+        frame: np.ndarray,
+        tracks: Sequence[tuple[int, int, int, int, str, float, int]],
+    ) -> np.ndarray:
+        """Draw detected tracks into the frame sent to the video stream."""
+        if not tracks:
+            return frame
+
+        output_frame = frame.copy()
+        for track in tracks:
+            if len(track) < 7:
+                continue
+            x1, y1, x2, y2, cls, conf, tid = track
+            color = (0, 255, 0)
+            cv2.rectangle(output_frame, (x1, y1), (x2, y2), color, 2)
+            cv2.putText(
+                output_frame,
+                f"{cls} #{tid} {conf:.2f}",
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
+        return output_frame
+
     def yolo_worker(self) -> None:
         """Worker thread executing YOLO ByteTrack inference on latest available frames."""
         logger.info("YOLO worker thread started")
@@ -471,7 +499,7 @@ class CameraTracker:
                 results = model.track(
                     frame_to_process,
                     persist=True,
-                    verbose=False,
+                    verbose=True,
                     tracker=self.tracker_config,
                     conf=self.conf,
                     iou=self.iou,
@@ -548,6 +576,8 @@ class CameraTracker:
             except Exception as exc:
                 logger.error("frame_processor failed: %s", exc)
                 stream_frame = frame
+
+        stream_frame = self._annotate_tracks(stream_frame, self.latest_tracks)
 
         if self.src is not None:
             out_buf = Gst.Buffer.new_wrapped(stream_frame.tobytes())

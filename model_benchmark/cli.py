@@ -8,6 +8,7 @@ from typing import List, Optional, Sequence
 from .config import ModelRunConfig
 from .report import write_summary_report
 from .runner import run_one
+from .mot_dataset import VISDRONE_MOT_ROOT, prepare_visdrone_mot
 from .visdrone import prepare_visdrone_val
 
 
@@ -51,6 +52,21 @@ def build_parser() -> argparse.ArgumentParser:
         "prepare-visdrone",
         help="download and prepare the VisDrone validation split under datasets/",
     )
+    prepare_mot_parser = subparsers.add_parser(
+        "prepare-visdrone-mot",
+        help="download and prepare the VisDrone-MOT validation sequences and labels",
+    )
+    prepare_mot_parser.add_argument(
+        "--archive",
+        type=Path,
+        help="use a VisDrone2019-MOT-val.zip already downloaded in a browser",
+    )
+    prepare_mot_parser.add_argument(
+        "--dataset-root",
+        type=Path,
+        default=VISDRONE_MOT_ROOT,
+        help="destination dataset directory (default: datasets/VisDrone-MOT)",
+    )
     return parser
 
 
@@ -66,6 +82,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(
             "{} {} images and labels at {}".format(
                 action, result["images"], result["dataset_root"]
+            )
+        )
+        return 0
+    if args.command == "prepare-visdrone-mot":
+        try:
+            result = prepare_visdrone_mot(
+                archive_path=args.archive,
+                dataset_root=args.dataset_root,
+            )
+        except (OSError, RuntimeError, ValueError, zipfile.BadZipFile) as exc:
+            print("Could not prepare VisDrone-MOT data: {}".format(exc), file=sys.stderr)
+            return 1
+        action = "Prepared" if result["prepared"] else "Already prepared"
+        print(
+            "{} {} sequences and {} frames at {}".format(
+                action,
+                result["sequences"],
+                result["frames"],
+                result["dataset_root"],
             )
         )
         return 0

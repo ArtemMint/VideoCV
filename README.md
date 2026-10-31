@@ -28,15 +28,16 @@ Supported model formats are detected from the model path:
 - ONNX: `.onnx` file
 - OpenVINO: `.xml` file or a directory containing exactly one `.xml` file
 
-The default dataset is the VisDrone2019-DET validation split, described by
-[datasets/visdrone-val.yaml](datasets/visdrone-val.yaml). Tracking configuration
-is recorded as `bytetrack.yaml` by default, but tracking metrics are not
-evaluated: the detection dataset has no ground-truth track IDs. The other
-defaults are 640-pixel input size, batch size 1, automatic device selection,
-confidence threshold 0.001, and IoU threshold 0.7. Automatic device selection
-uses CUDA for `.pt` models when available, CPU otherwise; ONNX and OpenVINO
-currently use CPU when set to `auto`. An explicit `device` value is passed to
-Ultralytics.
+The default detection dataset is the VisDrone2019-DET validation split,
+described by [datasets/visdrone-val.yaml](datasets/visdrone-val.yaml). To also
+evaluate tracking, set `tracking_dataset` to a VisDrone-MOT dataset directory.
+The benchmark runs the configured tracker over each video sequence and reports
+MOTA, IDF1, ID switches, and detection match counts. The default tracker is
+`bytetrack.yaml`; other defaults are 640-pixel input size, batch size 1,
+automatic device selection, confidence threshold 0.001, and detector NMS IoU
+threshold 0.7. Automatic device selection uses CUDA for `.pt` models when
+available, CPU otherwise; ONNX and OpenVINO currently use CPU when set to
+`auto`. An explicit `device` value is passed to Ultralytics.
 
 The VisDrone validation split is the default for models trained with the
 VisDrone 10-class label map. The included VisDrone-trained YOLO26n OpenVINO
@@ -72,6 +73,66 @@ configuration to that YAML path, for example `"dataset":
 in Ultralytics format. The path is validated before inference. Dataset paths
 with relative components are resolved from the repository root.
 
+For MOT evaluation, retain the original VisDrone-MOT frame sequence and
+tracking annotations. Supported layouts include:
+
+```text
+datasets/VisDrone-MOT/
+  sequences/<sequence>/<frame>.jpg
+  annotations/<sequence>.txt
+```
+
+and MOTChallenge-style sequence directories:
+
+```text
+datasets/VisDrone-MOT/<sequence>/img1/<frame>.jpg
+datasets/VisDrone-MOT/<sequence>/gt/gt.txt
+```
+
+Prepare the official VisDrone-MOT validation split (about 1.48 GB):
+
+```bash
+python -m model_benchmark.cli prepare-visdrone-mot
+```
+
+The command downloads the official archive and extracts it to
+`datasets/VisDrone-MOT/`. If Google Drive's download quota is exceeded, download
+the `VisDrone2019-MOT-val.zip` valset from the official
+[VisDrone dataset page](https://github.com/VisDrone/VisDrone-Dataset#task-4-multi-object-tracking)
+in a browser, then pass the archive path to the same command:
+
+```bash
+python -m model_benchmark.cli prepare-visdrone-mot \
+  --archive ~/Downloads/VisDrone2019-MOT-val.zip
+```
+
+The dataset files are ignored by Git. The prepare step validates the archive
+and refuses unsafe paths or an incomplete existing destination. No train or
+test split is downloaded.
+
+Add the MOT root to the same run configuration while keeping `dataset` set to
+a detection-validation YAML:
+
+```json
+{
+  "model": "models/yolo26n_visdrone.pt",
+  "dataset": "datasets/visdrone-val.yaml",
+  "tracking_dataset": "datasets/VisDrone-MOT",
+  "tracker": "bytetrack.yaml",
+  "device": "auto"
+}
+```
+
+VisDrone-MOT labels are expected as comma-separated rows containing frame,
+track ID, left, top, width, height, confidence, and category (the standard
+VisDrone MOT format). Categories 1-10 are matched to YOLO class IDs 0-9;
+ignored/invalid categories and non-positive-confidence rows are skipped.
+Tracking metrics use class-aware frame matching at IoU 0.5; the `iou` setting
+continues to control detector NMS. MOTA and IDF1 are reported with counts and
+ID switches. The current report implements MOTA and IDF1; it does not claim
+official VisDrone toolkit scores or HOTA. Run the official toolkit for final
+benchmark submissions.
+
 ### Run one or more models
 
 The comparison config includes local COCO-pretrained Nano weights and their
@@ -89,6 +150,15 @@ the single-model config:
 
 ```bash
 python -m model_benchmark.cli run model_benchmark/config.example.json \
+  --output model_benchmark_results
+```
+
+To evaluate detection and tracking on the prepared VisDrone-MOT validation
+set, run its example configuration:
+
+```bash
+python -m model_benchmark.cli run \
+  model_benchmark/config.visdrone-mot.example.json \
   --output model_benchmark_results
 ```
 
@@ -165,14 +235,16 @@ models, use a top-level `runs` list. Each entry can override defaults:
 
 The following options can be set per run: `name`, `model`, `dataset`, `tracker`,
 `imgsz`, `device`, `batch`, `conf`, `iou`, `repeats`, `warmup_iterations`,
-`inference_iterations`, `half`, `export_parameters`, `min_map50_95`,
+`inference_iterations`, `quantize`, `export_parameters`, `min_map50_95`,
 `max_latency_ms`, `max_memory_mb`, and `max_gpu_memory_mb`. Dataset defaults to
 `datasets/visdrone-val.yaml`; COCO-pretrained models should explicitly use
 `coco8.yaml` or another COCO-labeled dataset. Dataset paths are resolved from
 the repository root. Only the project's known VisDrone validation YAML is
 automatically prepared; custom dataset paths are never downloaded implicitly.
 `export_parameters` records exporter settings for traceability; it does not
-re-export or modify a model. `half` is passed as the requested FP16 mode.
+re-export or modify a model. `quantize` accepts `16` for FP16, `32` for FP32,
+or `null` for the backend default. It is passed to Ultralytics' current API
+without using the deprecated `half` argument.
 Defaults are three validation repeats, five warm-up calls, and 20 timed
 prediction calls per repeat.
 
@@ -234,7 +306,7 @@ successfully only if at least one completed model meets all its limits.
 | Acceptance thresholds and quality/latency/memory Pareto comparison | Implemented within equivalent hardware and run conditions |
 | Individual and comparison JSON/HTML reports | Implemented |
 | Unit tests and end-to-end validation | Unit tests cover the benchmark flow; hardware-specific measurements need validation on the target device |
-| Ground-truth tracker stability metrics | Not implemented: COCO8 has no track IDs |
+| VisDrone-MOT tracking metrics (MOTA, IDF1, ID switches) | Implemented when `tracking_dataset` is configured |
 | Automatic error categorization and AI-assisted development workflow | Not implemented |
 | Windows/macOS/Linux comparison in CI | Not implemented |
 
@@ -268,8 +340,8 @@ Recommended next steps:
    comparing `.pt` with ONNX/OpenVINO per image.
 2. Validate the measurements against an external camera/stream timing harness
    and collect onboard power telemetry on the target platform if available.
-3. Add a MOT-format dataset and tracker metrics such as IDF1/HOTA before
-   reporting tracker stability.
+3. Validate MOT metrics against the official VisDrone-MOT evaluation toolkit
+   and add HOTA if it is needed for model selection.
 4. Add CI smoke tests for supported OS/runtime combinations and document the
    AI-assisted change/review workflow.
 

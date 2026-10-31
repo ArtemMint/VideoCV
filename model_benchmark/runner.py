@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .config import ModelRunConfig
+from .mot import evaluate_mot_sequences
 from .visdrone import ensure_visdrone_dataset
 
 
@@ -469,11 +470,13 @@ def _comparison_group(config: ModelRunConfig, runtime: Dict[str, Any]) -> str:
         "device": runtime["device"],
         "device_model": runtime["device_model"],
         "dataset": config.dataset,
+        "tracking_dataset": config.tracking_dataset,
+        "tracker": config.tracker if config.tracking_dataset else None,
         "imgsz": config.imgsz,
         "batch": config.batch,
         "conf": config.conf,
         "iou": config.iou,
-        "half": config.half,
+        "quantize": config.quantize,
         "export_parameters": config.export_parameters,
         "model_export_parameters": runtime.get("model_export_parameters", {}),
     }
@@ -609,7 +612,7 @@ def _predict_once(
         device=device,
         conf=config.conf,
         iou=config.iou,
-        half=config.half,
+        quantize=config.quantize,
         verbose=False,
         save=False,
     )
@@ -712,7 +715,10 @@ def run_one(
         "notes": [],
         "tracking_metrics": {
             "status": "not_evaluated",
-            "reason": "The selected detection dataset has no ground-truth track IDs",
+            "reason": (
+                "No tracking_dataset was configured; the detection dataset has no "
+                "ground-truth track IDs"
+            ),
         },
     }
     if "coco8" in config.dataset.lower():
@@ -738,7 +744,9 @@ def run_one(
         device = _resolve_device(config)
         result["resolved_device"] = device
         result["runtime"] = _runtime_profile(device)
-        result["runtime"]["requested_precision"] = "fp16" if config.half else "fp32/default"
+        result["runtime"]["requested_precision"] = (
+            "fp16" if config.quantize == 16 else "fp32/default"
+        )
         result["comparison_group"] = _comparison_group(config, result["runtime"])
 
         with _ResourceSampler() as sampler, _GpuSampler(
@@ -751,7 +759,7 @@ def run_one(
             )
 
             export_keys = {
-                "format", "imgsz", "batch", "half", "int8", "dynamic",
+                "format", "imgsz", "batch", "quantize", "int8", "dynamic",
                 "simplify", "opset", "workspace", "nms",
             }
             model_overrides = getattr(model, "overrides", {}) or {}
@@ -835,7 +843,7 @@ def run_one(
                     device=device,
                     conf=config.conf,
                     iou=config.iou,
-                    half=config.half,
+                    quantize=config.quantize,
                     plots=True,
                     verbose=False,
                     project=str(output_dir / "ultralytics"),
@@ -855,6 +863,22 @@ def run_one(
             result["metrics"]["validation_batch_latency"] = _latency_summary(
                 batch_latencies
             )
+
+            if config.tracking_dataset is not None:
+                tracking_started = time.perf_counter()
+                result["tracking_metrics"] = evaluate_mot_sequences(
+                    model,
+                    Path(config.tracking_dataset),
+                    tracker=config.tracker,
+                    imgsz=config.imgsz,
+                    device=device,
+                    conf=config.conf,
+                    iou=config.iou,
+                    quantize=config.quantize,
+                )
+                result["timings"]["tracking_wall_seconds"] = (
+                    time.perf_counter() - tracking_started
+                )
 
         result["resources"] = sampler.as_dict()
         result["resources"]["gpu"] = gpu_sampler.as_dict()

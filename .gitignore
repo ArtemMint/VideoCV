@@ -59,6 +59,7 @@ model_benchmark_results/
 runs/
 datasets/coco8/
 datasets/VisDrone/
+datasets/VisDrone-MOT/
 **/report.json
 **/report.html
 **/summary.json

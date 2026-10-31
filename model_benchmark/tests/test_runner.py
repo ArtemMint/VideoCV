@@ -44,9 +44,12 @@ class ModelRunnerTests(unittest.TestCase):
     def test_run_measures_load_warmup_prediction_and_repeated_validation(self):
         model_path = self.root / "model.pt"
         model_path.touch()
+        tracking_dataset = self.root / "mot"
+        tracking_dataset.mkdir()
         config = ModelRunConfig(
             model=model_path,
             name="unit-test",
+            tracking_dataset=str(tracking_dataset),
             repeats=2,
             warmup_iterations=1,
             inference_iterations=2,
@@ -63,7 +66,7 @@ class ModelRunnerTests(unittest.TestCase):
 
         class FakeYOLO:
             names = {0: "object"}
-            overrides = {"half": False, "imgsz": 640, "dynamic": False}
+            overrides = {"quantize": None, "imgsz": 640, "dynamic": False}
 
             def __init__(self, path, task):
                 calls["model"] = (path, task)
@@ -117,13 +120,21 @@ class ModelRunnerTests(unittest.TestCase):
                             "model_benchmark.runner._representative_frame",
                             return_value=(object(), "test-frame.jpg"),
                         ):
-                            result = run_one(config, self.root / "reports", 1)
+                            with patch(
+                                "model_benchmark.runner.evaluate_mot_sequences",
+                                return_value={"status": "evaluated", "mota": 0.9},
+                            ) as evaluate_tracking:
+                                result = run_one(config, self.root / "reports", 1)
 
         self.assertEqual(result["status"], "completed")
         ensure_dataset.assert_called_once_with(config.dataset)
         self.assertEqual(calls["model"], (str(model_path), "detect"))
         self.assertEqual(calls["val"]["data"], config.dataset)
         self.assertEqual(calls["val"]["device"], "cpu")
+        self.assertIn("quantize", calls["val"])
+        self.assertNotIn("half", calls["val"])
+        self.assertTrue(all("quantize" in call for call in calls["predict"]))
+        self.assertTrue(all("half" not in call for call in calls["predict"]))
         self.assertTrue(calls["val"]["plots"])
         self.assertEqual(len(calls["predict"]), 5)
         self.assertTrue(Path(result["report_json"]).is_file())
@@ -146,7 +157,14 @@ class ModelRunnerTests(unittest.TestCase):
         )
         self.assertIn("p50_fps", report_data["metrics"]["inference"]["fps"])
         self.assertEqual(report_data["resources"]["rss_peak_mb"], 120.0)
-        self.assertEqual(report_data["tracking_metrics"]["status"], "not_evaluated")
+        self.assertEqual(report_data["tracking_metrics"]["status"], "evaluated")
+        self.assertEqual(report_data["tracking_metrics"]["mota"], 0.9)
+        self.assertEqual(
+            evaluate_tracking.call_args.args[1], tracking_dataset.resolve()
+        )
+        self.assertEqual(
+            evaluate_tracking.call_args.kwargs["tracker"], config.tracker
+        )
         self.assertIn("dataset_setup_seconds", report_data["timings"])
         self.assertTrue(report_data["decision"]["meets_requirements"])
         self.assertEqual(

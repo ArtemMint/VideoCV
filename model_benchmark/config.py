@@ -47,6 +47,7 @@ class ModelRunConfig:
     model: ModelPath
     name: str = ""
     dataset: str = "datasets/visdrone-val.yaml"
+    tracking_dataset: Optional[str] = None
     tracker: str = "bytetrack.yaml"
     imgsz: int = 640
     device: str = "auto"
@@ -56,7 +57,7 @@ class ModelRunConfig:
     repeats: int = 3
     warmup_iterations: int = 5
     inference_iterations: int = 20
-    half: bool = False
+    quantize: Optional[int] = None
     export_parameters: Dict[str, Any] = field(default_factory=dict)
     min_map50_95: Optional[float] = None
     max_latency_ms: Optional[float] = None
@@ -80,6 +81,21 @@ class ModelRunConfig:
             if not dataset_path.exists():
                 raise ValueError("Dataset path does not exist: {}".format(dataset_path))
             object.__setattr__(self, "dataset", str(dataset_path))
+        if self.tracking_dataset is not None:
+            if (
+                not isinstance(self.tracking_dataset, str)
+                or not self.tracking_dataset.strip()
+            ):
+                raise ValueError("tracking_dataset must be a non-empty directory path")
+            tracking_path = Path(self.tracking_dataset).expanduser()
+            if not tracking_path.is_absolute():
+                tracking_path = PROJECT_ROOT / tracking_path
+            tracking_path = tracking_path.resolve()
+            if not tracking_path.is_dir():
+                raise ValueError(
+                    "Tracking dataset directory does not exist: {}".format(tracking_path)
+                )
+            object.__setattr__(self, "tracking_dataset", str(tracking_path))
         if not self.tracker.strip():
             raise ValueError("Tracker must be a non-empty Ultralytics tracker config")
         if not self.device.strip():
@@ -98,8 +114,8 @@ class ModelRunConfig:
             raise ValueError("warmup_iterations cannot be negative")
         if self.inference_iterations <= 0:
             raise ValueError("inference_iterations must be greater than zero")
-        if not isinstance(self.half, bool):
-            raise ValueError("half must be a boolean")
+        if self.quantize not in (None, 16, 32):
+            raise ValueError("quantize must be 16 (FP16), 32 (FP32), or null")
         if not isinstance(self.export_parameters, dict):
             raise ValueError("export_parameters must be an object")
         if not 0.0 <= self.conf <= 1.0:

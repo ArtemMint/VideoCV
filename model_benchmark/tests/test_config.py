@@ -43,6 +43,23 @@ class ModelRunConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Dataset path does not exist"):
             ModelRunConfig(model=model, dataset=str(self.root / "missing.yaml"))
 
+    def test_tracking_dataset_path_is_resolved_and_must_be_a_directory(self):
+        model = self.make_model("model.pt")
+        tracking_dataset = self.root / "mot"
+        tracking_dataset.mkdir()
+
+        config = ModelRunConfig(
+            model=model,
+            tracking_dataset=str(tracking_dataset),
+        )
+
+        self.assertEqual(config.tracking_dataset, str(tracking_dataset.resolve()))
+        with self.assertRaisesRegex(ValueError, "Tracking dataset directory does not exist"):
+            ModelRunConfig(
+                model=model,
+                tracking_dataset=str(self.root / "missing-mot"),
+            )
+
     def test_detects_pt_and_onnx_formats(self):
         self.assertEqual(detect_model_format(self.make_model("model.pt")), "pt")
         self.assertEqual(detect_model_format(self.make_model("model.onnx")), "onnx")
@@ -94,6 +111,7 @@ class ModelRunConfigTests(unittest.TestCase):
             lambda: make_config(dataset=""),
             lambda: make_config(tracker=""),
             lambda: make_config(device=""),
+            lambda: make_config(quantize=8),
         )
         for invalid_config in invalid_configs:
             with self.subTest(invalid_config=invalid_config):
@@ -106,7 +124,7 @@ class ModelRunConfigTests(unittest.TestCase):
             repeats=4,
             warmup_iterations=7,
             inference_iterations=25,
-            half=True,
+            quantize=16,
             export_parameters={"dynamic": True, "opset": 17},
             min_map50_95=0.4,
             max_latency_ms=40,
@@ -119,7 +137,7 @@ class ModelRunConfigTests(unittest.TestCase):
         self.assertEqual(serialized["repeats"], 4)
         self.assertEqual(serialized["warmup_iterations"], 7)
         self.assertEqual(serialized["inference_iterations"], 25)
-        self.assertTrue(serialized["half"])
+        self.assertEqual(serialized["quantize"], 16)
         self.assertEqual(serialized["export_parameters"]["opset"], 17)
         self.assertEqual(serialized["max_latency_ms"], 40)
         self.assertEqual(serialized["max_gpu_memory_mb"], 900)
